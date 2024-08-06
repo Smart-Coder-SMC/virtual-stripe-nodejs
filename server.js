@@ -2,43 +2,58 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const path = require('path');
 
 const app = express();
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
-app.post('/create-payment-link', async (req, res) => {
+// Serve static files
+app.use(express.static('public'));
+
+// Serve the main page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Endpoint to create a Stripe Checkout session
+app.post('/create-checkout-session', async (req, res) => {
     try {
-        // Create a product
-        const stripeProduct = await stripe.products.create({
-            name: 'apple watch',
-        });
-
-        // Create a price for the product
-        const price = await stripe.prices.create({
-            product: stripeProduct.id,
-            unit_amount: 35 * 100, // Stripe expects the amount in the smallest currency unit
-            currency: 'usd',
-        });
-
-        // Create a payment link using the price ID
-        const paymentLink = await stripe.paymentLinks.create({
-            line_items: [
-                {
-                    price: price.id,
-                    quantity: 1,
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [{
+                price_data: {
+                    currency: 'usd',
+                    product_data: {
+                        name: 'apple watch',
+                    },
+                    unit_amount: 3500, // $35.00
                 },
-            ],
+                quantity: 1,
+            }],
+            mode: 'payment',
+            success_url: `http://localhost:${PORT}/success`,
+            cancel_url: `http://localhost:${PORT}/cancel`,
         });
 
-        res.json({ link: paymentLink.url });
+        res.redirect(303, session.url);
     } catch (error) {
         res.status(500).send(error.message);
     }
 });
 
-const PORT = process.env.PORT || 3000;
+// Success page
+app.get('/success', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'success.html'));
+});
+
+// Cancel page
+app.get('/cancel', (req, res) => {
+    res.send('Payment canceled.');
+});
+
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
